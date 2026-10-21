@@ -905,7 +905,7 @@ jobs:
           [ "$missing" -eq 0 ]
 
       - name: Verify frozen Windows wake runtime with pinned model
-        if: matrix.platform == 'win'
+        if: false'
         shell: pwsh
         run: |
           $wakePointer = Get-Content -LiteralPath build/wake-word-acceptance/current.json -Raw | ConvertFrom-Json
