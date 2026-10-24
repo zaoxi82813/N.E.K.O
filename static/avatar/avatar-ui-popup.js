@@ -10,6 +10,7 @@
 const AVATAR_POPUP_ANIMATION_DURATION_MS = 200;
 const AVATAR_POPUP_HOVER_COLLAPSE_DELAY_MS = 260;
 const AVATAR_POPUP_HOVER_BRIDGE_GRACE_MS = 900;
+const AVATAR_POPUP_HOVER_RECHECK_MS = 90;
 const AVATAR_POPUP_HOVER_BRIDGE_PADDING_PX = 18;
 const AVATAR_CHARACTER_MANAGER_WINDOW_WIDTH = 1240;
 const AVATAR_CHARACTER_MANAGER_WINDOW_HEIGHT = 940;
@@ -2021,10 +2022,18 @@ function attachSidePanelHover(manager, prefix, anchorEl, sidePanel) {
         lastPointerPosition = { x: event.clientX, y: event.clientY };
     };
 
+    // 指针离开整个窗口（或窗口失焦）后不会再有 pointermove。清掉记录的位置，
+    // 下一次复查就能收起，不必把过渡宽限走完。
+    const forgetPointerOnWindowExit = (event) => {
+        if (event.type === 'blur' || !event.relatedTarget) lastPointerPosition = null;
+    };
+
     const startPointerTracking = () => {
         if (isPointerTracking) return;
         document.addEventListener('mousemove', rememberPointerPosition, true);
         document.addEventListener('pointermove', rememberPointerPosition, true);
+        document.addEventListener('mouseout', forgetPointerOnWindowExit, true);
+        window.addEventListener('blur', forgetPointerOnWindowExit);
         isPointerTracking = true;
     };
 
@@ -2032,6 +2041,8 @@ function attachSidePanelHover(manager, prefix, anchorEl, sidePanel) {
         if (!isPointerTracking) return;
         document.removeEventListener('mousemove', rememberPointerPosition, true);
         document.removeEventListener('pointermove', rememberPointerPosition, true);
+        document.removeEventListener('mouseout', forgetPointerOnWindowExit, true);
+        window.removeEventListener('blur', forgetPointerOnWindowExit);
         isPointerTracking = false;
     };
     sidePanel._stopHoverPointerTracking = stopPointerTracking;
@@ -2074,10 +2085,13 @@ function attachSidePanelHover(manager, prefix, anchorEl, sidePanel) {
             : delay;
         if (sidePanel._hoverCollapseTimer) { clearTimeout(sidePanel._hoverCollapseTimer); sidePanel._hoverCollapseTimer = null; }
         startPointerTracking();
+        // 锚点或面板上的 :hover 直接取消收起。过渡缝（锚点和面板包围盒外加
+        // 18px）只再维持一小段，方便从按钮移到面板；停在缝里超过这段就收起。
+        // 光标停在按钮或面板上时不靠这段宽限续命。
         const bridgeGraceStartedAt = Date.now();
         const attemptCollapse = () => {
             sidePanel._hoverCollapseTimer = null;
-            if (!sidePanel.isConnected || isTutorialHoverDisabled()) {
+            if (!sidePanel.isConnected || sidePanel.style.display === 'none' || isTutorialHoverDisabled()) {
                 stopPointerTracking();
                 return;
             }
@@ -2089,7 +2103,7 @@ function attachSidePanelHover(manager, prefix, anchorEl, sidePanel) {
                 isPointerInTransferBridge()
                 && Date.now() - bridgeGraceStartedAt < AVATAR_POPUP_HOVER_BRIDGE_GRACE_MS
             ) {
-                sidePanel._hoverCollapseTimer = setTimeout(attemptCollapse, 90);
+                sidePanel._hoverCollapseTimer = setTimeout(attemptCollapse, AVATAR_POPUP_HOVER_RECHECK_MS);
                 return;
             }
             sidePanel._collapse();
