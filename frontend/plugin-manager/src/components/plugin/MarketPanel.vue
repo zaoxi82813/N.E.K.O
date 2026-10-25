@@ -96,35 +96,35 @@
       :rules-trigger-label="t('market.filterRules')"
       :rules-title="t('market.filterRulesTitle')"
       :rules-hint="t('market.filterRulesHint')"
-    />
-
-    <WorkbenchToolbar class="market-panel__toolbar">
-      <WorkbenchGroupFilter
-        v-model:selected-ids="selectedGroupIds"
-        :choices="groupChoices"
-        :counts="groupCounts"
-        selection-mode="single"
-      />
-      <div class="market-panel__toolbar-right">
-        <el-select
-          v-model="sortBy"
-          size="small"
-          class="market-panel__sort"
-          @change="onSortChange"
-        >
-          <el-option
-            v-for="opt in sortOptions"
-            :key="opt.value"
-            :value="opt.value"
-            :label="opt.label"
-          />
-        </el-select>
-        <WorkbenchLayoutSwitcher
-          v-model:layout-mode="layoutMode"
-          :choices="layoutChoices"
+    >
+      <template #footer>
+        <WorkbenchGroupFilter
+          v-model:selected-ids="selectedGroupIds"
+          :choices="groupChoices"
+          :counts="groupCounts"
+          selection-mode="single"
         />
-      </div>
-    </WorkbenchToolbar>
+        <div class="market-panel__toolbar-right">
+          <el-select
+            v-model="sortBy"
+            size="small"
+            class="market-panel__sort"
+            @change="onSortChange"
+          >
+            <el-option
+              v-for="opt in sortOptions"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+          <WorkbenchLayoutSwitcher
+            v-model:layout-mode="layoutMode"
+            :choices="layoutChoices"
+          />
+        </div>
+      </template>
+    </WorkbenchFilterBar>
 
     <div class="market-panel__content">
       <EmptyState
@@ -160,7 +160,8 @@
       <template v-else>
         <GridSection
           :title="activeGroupLabel"
-          :items="filteredItems"
+          :items="pagedItems"
+          :count="totalCount"
           :layout-mode="layoutMode"
           :multi-select-enabled="false"
           :selected-ids="[]"
@@ -190,7 +191,6 @@
             :total="totalCount"
             :small="embedded"
             layout="prev, pager, next, total"
-            @current-change="handlePageChange"
           />
         </div>
       </template>
@@ -262,15 +262,13 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import WorkbenchFilterBar from '@/components/common/WorkbenchFilterBar.vue'
 import WorkbenchGroupFilter from '@/components/common/WorkbenchGroupFilter.vue'
 import WorkbenchLayoutSwitcher from '@/components/common/WorkbenchLayoutSwitcher.vue'
-import WorkbenchToolbar from '@/components/common/WorkbenchToolbar.vue'
 import GridSection from '@/components/common/GridSection.vue'
 import {
-  fetchMarketPlugins,
+  fetchMarketCatalog,
   fetchMarketPluginVersions,
   getMarketUrl,
   isMarketAvailable,
   type MarketPlugin,
-  type FetchMarketPluginsParams,
 } from '@/api/market'
 import { useMarketWorkbench, type MarketWorkbenchItem } from '@/composables/useMarketWorkbench'
 import type {
@@ -288,10 +286,7 @@ import { usePluginStore } from '@/stores/plugin'
 import { useMarketInstalledStore } from '@/stores/marketInstalled'
 import { usePluginUpdatesStore } from '@/stores/pluginUpdates'
 import { useUserPreferenceStore } from '@/stores/userPreference'
-import {
-  isGithubReleaseDownloadUrl,
-  useGithubMirrorSource,
-} from '@/composables/useGithubMirrorSource'
+import { useGithubMirrorSource } from '@/composables/useGithubMirrorSource'
 import { narrowMarketChannel } from '@/utils/narrowChannel'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
@@ -342,10 +337,9 @@ const marketBaseUrl = ref<string | null>(null)
 const plugins = ref<MarketPlugin[]>([])
 const currentPage = ref(1)
 const pageSize = props.embedded ? 8 : 12
-const totalCount = ref(0)
 const installingId = ref<string | null>(null)
 const upgradingId = ref<string | number | null>(null)
-const { resolveGithubDownloadUrl, ensureAutoSource } = useGithubMirrorSource()
+const { ensureDownloadPreferences } = useGithubMirrorSource()
 // Install requests keep a rejected fetch as an exception: `handleInstall`
 // opens the package URL as the manual fallback from its catch, and a `null`
 // here would be misreported as "pairing required".
@@ -623,54 +617,41 @@ const filterRuleGroups = computed<FilterRuleGroupDescriptor[]>(() => [
   },
 ])
 
+// ─── 分页：先在完整目录上过滤，再对命中结果分页 ──────────────────
+const totalCount = computed(() => filteredItems.value.length)
 const totalPages = computed(() => Math.ceil(totalCount.value / pageSize))
-
-// ─── 后端查询：提取纯关键词，qualifier 和排除项留给前端 ────────
-/** 从用户输入里抽取可以直传给后端 q= 的"裸 term"。 */
-function extractServerQuery(input: string): string {
-  if (!input.trim()) return ''
-  const tokens = input.match(/"[^"]+"|\S+/g) || []
-  const terms = tokens
-    .map((raw) => {
-      const negated = raw.startsWith('-')
-      const body = negated ? raw.slice(1) : raw
-      const unquoted = body.replace(/^"(.*)"$/, '$1').trim()
-      if (!unquoted || unquoted.includes(':')) return ''
-      if (negated) return ''
-      return unquoted
-    })
-    .filter(Boolean)
-  return terms.join(' ').trim()
-}
+const pagedItems = computed(() =>
+  filteredItems.value.slice((currentPage.value - 1) * pageSize, currentPage.value * pageSize),
+)
 
 let loadSeq = 0
+// 当前 ``plugins`` 对应的查询（channel + 排序）。
+let loadedQuery = ''
 
 async function loadPlugins() {
   if (!marketAvailable.value) return
   const mySeq = ++loadSeq
+  const query = {
+    sort_by: sortBy.value,
+    sort_order: sortOrder.value,
+    // v2 (R7.3): 全局 channel 偏好透传给 Market；切换后 watcher 会触发重载
+    channel: userPref.channel,
+  }
+  const queryKey = `${query.channel}|${query.sort_by}|${query.sort_order}`
+  // 换了 channel 或排序，旧目录就不再对应当前查询：先清空，避免全量目录加载期间
+  // 还能从旧卡片安装旧 channel 的版本，加载失败时也能落到可重试的错误态。
+  if (queryKey !== loadedQuery) plugins.value = []
   loading.value = true
   try {
-    const params: FetchMarketPluginsParams = {
-      page: currentPage.value,
-      page_size: pageSize,
-      sort_by: sortBy.value,
-      sort_order: sortOrder.value,
-      // v2 (R7.3): 全局 channel 偏好透传给 Market；切换后 watcher 会触发重载
-      channel: userPref.channel,
-    }
-    const q = extractServerQuery(filterText.value)
-    if (q) params.search = q
-    if (activeGroupId.value === 'recommended') params.featured_only = true
-
-    const result = await fetchMarketPlugins(params)
+    const result = await fetchMarketCatalog(query)
     // 只接受最新一次请求的返回值，避免乱序覆盖
     if (mySeq !== loadSeq) return
     if (result) {
-      plugins.value = result.items
-      totalCount.value = result.total
+      plugins.value = result
+      loadedQuery = queryKey
       lastLoadFailed.value = false
     } else {
-      // ``fetchMarketPlugins`` returns null on transient API/network error.
+      // ``fetchMarketCatalog`` returns null on transient API/network error.
       // Keep ``marketAvailable`` driven by ``isMarketAvailable()`` only so a
       // hiccup here does not freeze the early-return guard below and lock
       // the user into the "not configured" empty state until remount.
@@ -782,16 +763,16 @@ async function runYankSweep(revision: number, channel: 'stable' | 'beta'): Promi
   yankedMap.value = nextYanked
 }
 
-// ─── 交互：分页、搜索 debounce、排序、分组切换 ────────────────────
+// ─── 交互：分页、筛选、排序、分组切换 ────────────────────────────
 
-let searchDebounceTimer: number | null = null
+// 筛选和分组都在本地目录上计算，变化后回到第一页即可，无需重新请求。
+watch([filterText, activeGroupId], () => {
+  currentPage.value = 1
+})
 
-watch(filterText, () => {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = window.setTimeout(() => {
-    currentPage.value = 1
-    loadPlugins()
-  }, 400)
+// 已安装状态等变化可能让命中结果变少，当前页不能停在末页之后。
+watch(totalPages, (pages) => {
+  if (currentPage.value > Math.max(1, pages)) currentPage.value = Math.max(1, pages)
 })
 
 // v2 (R7.5): 切换全局 channel 立即重载列表 + 重新跑 yank sweep
@@ -806,20 +787,10 @@ watch(
   },
 )
 
-watch(activeGroupId, () => {
-  currentPage.value = 1
-  loadPlugins()
-})
-
 function onSortChange() {
   // name 字段默认升序，其他字段默认降序
   sortOrder.value = sortBy.value === 'name' ? 'asc' : 'desc'
   currentPage.value = 1
-  loadPlugins()
-}
-
-function handlePageChange(page: number) {
-  currentPage.value = page
   loadPlugins()
 }
 
@@ -866,7 +837,7 @@ async function resolveInstallPayload(
   let payloadHash: string | null = null
   let version = plugin.version
   let channel: string | null = plugin.latest_channel || null
-  let publishedAt: string | null = plugin.latest_published_at || null
+  const publishedAt: string | null = plugin.latest_published_at || null
 
   try {
     const versions = await fetchMarketPluginVersions(plugin.rawId, {
@@ -928,14 +899,13 @@ async function handleInstall(plugin: MarketWorkbenchItem) {
     }
 
     installingId.value = plugin.id
-    if (isGithubReleaseDownloadUrl(payload.package_url)) {
-      try {
-        await ensureAutoSource()
-      } catch {
-        ElMessage.warning(t('mirrorSource.installFallback'))
-      }
+    try {
+      await ensureDownloadPreferences()
+    } catch {
+      ElMessage.error(t('mirrorSource.saveFailed'))
+      return
     }
-    packageUrl = resolveGithubDownloadUrl(payload.package_url)
+    packageUrl = payload.package_url
     const res = await fetchBridge('/market/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1026,14 +996,13 @@ async function handleUpgrade(plugin: MarketWorkbenchItem) {
     }
 
     upgradingId.value = plugin.id
-    if (isGithubReleaseDownloadUrl(payload.package_url)) {
-      try {
-        await ensureAutoSource()
-      } catch {
-        ElMessage.warning(t('mirrorSource.installFallback'))
-      }
+    try {
+      await ensureDownloadPreferences()
+    } catch {
+      ElMessage.error(t('mirrorSource.saveFailed'))
+      return
     }
-    const packageUrl = resolveGithubDownloadUrl(payload.package_url)
+    const packageUrl = payload.package_url
     const installRequest: Record<string, unknown> = {
       package_url: packageUrl,
       canonical_package_url: payload.package_url,
@@ -1175,10 +1144,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (searchDebounceTimer) {
-    clearTimeout(searchDebounceTimer)
-    searchDebounceTimer = null
-  }
   // 让在途 loadPlugins 的 mySeq 全部失效
   loadSeq++
 })
@@ -1205,15 +1170,8 @@ watch(
   min-width: 0;
 }
 
+/* 高度与滚动由插件管理的抽屉统一给出（.plugin-workbench__rail-inner > *）。 */
 .market-panel--embedded {
-  /*
-    min-height 而不是 height：这张白纸面自带背景、圆角与阴影，这些都是画在元素自己盒子上的。
-    写成 height:100% 会被 .plugin-workbench__rail-inner > * 的 100% 钉死，面板内容一旦高于
-    抽屉，溢出的部分（后续卡片、分页条）就落在页面底色上——实测小窗口下市场列表滚到底时，
-    分页条两侧是 rgb(242,243,245) 而不是白底。min-height 让纸面随内容长高，抽屉自己是
-    滚动容器（插件管理里打开态是 overflow-y:auto），滚动行为不变。
-  */
-  min-height: 100%;
   padding: 18px 18px 24px;
   background: var(--surface-card);
   border-radius: var(--radius-card);
@@ -1274,10 +1232,6 @@ watch(
 .market-panel__icon-btn:hover {
   background: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
   color: var(--el-color-primary);
-}
-
-.market-panel__toolbar {
-  margin-top: 0;
 }
 
 .market-panel__toolbar-right {
