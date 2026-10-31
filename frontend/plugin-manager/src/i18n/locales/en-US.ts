@@ -755,6 +755,10 @@ export default {
       surfaceUnavailable: 'Surface unavailable',
       surfaceEntryMissing: 'The entry file declared by this surface does not exist. Check the entry path in plugin.toml.',
       surfaceWarnings: 'Plugin UI declaration needs attention',
+      focus: 'Focus',
+      focusHint: 'Hide the sidebar and page chrome so the panel fills the window',
+      exitFocus: 'Exit focus',
+      exitFocusHint: 'Exit focus mode (Esc)',
       controlError: 'Plugin UI control error',
       hostedRuntimePending: 'The Vue container recognized this surface. TSX, Markdown, and Auto renderers will be connected in a later phase.'
     }
@@ -1125,7 +1129,7 @@ export default {
         skipChat: 'Not now',
         sayHello: 'Hello',
       },
-      controlBanner: 'The catgirl is controlling the mouse',
+      controlBanner: 'The neko is controlling the mouse',
       lines: {
         introActivationHint: "Hang on a moment, I'll start talking soon, nyan~!",
         introGreetingReply:  "A gentle breeze, warm sunshine, and you, appearing at just the right moment. Nice to meet you! I'm Lin Youyi, please take good care of me from now on, meow~! I've written down everything about this place in this novice guide! Think of it as our very first little gift for meeting each other, please accept it!",

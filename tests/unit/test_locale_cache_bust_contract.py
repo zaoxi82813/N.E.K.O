@@ -66,15 +66,41 @@ LOCALE_VERSION_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9._-]*$")
 # When incrementing LOCALE_VERSION, append old value here.
 RETIRED_LOCALE_VERSIONS = frozenset(
     {
+        "2026-10-30-voice-processing-host",
+        "2026-10-29-visit-invitation-input",
+        "2026-10-30-voice-repair-recovery",
+        "2026-10-30-local-audio-copy",
+        "2026-10-28-pr3507-resource-setup-main-sync",
+        "2026-10-28-social-hub-realtime-main-merge",
+        "2026-10-28-hide-nekoverse-entry",
+        "2026-10-28-voice-resource-setup-ci-fix",
+        "2026-10-27-voice-input-setup-main-rebase",
+        "2026-10-28-voice-input-setup-main-rebase",
+        "2026-10-28-voice-resource-feedback",
+        "2026-10-28-voice-resource-complete",
+        "2026-10-28-voice-resource-result",
+        "2026-10-28-voice-resource-repair",
+        "2026-10-28-voice-resource-repair-errors",
+        "2026-10-28-microphone-short-trial",
+        "2026-10-28-pr3507-ci-main-sync",
+        "2026-10-28-social-hub-recommendation-dismiss",
+        "2026-10-28-social-hub-recommendations",
+        "2026-10-28-social-hub-empty-states",
+        "2026-10-28-pr3507-main-rebase",
+        "2026-10-27-pr3507-conflict-rebase",
+        "2026-10-27-watch-together-stop-notice",
         "2026-10-27-watch-together-redesign",
         "2026-10-27-visit-social-hub-feedback-information",
         "2026-10-27-visit-social-hub",
+        "2026-10-27-voice-input-setup",
+        "2026-10-27-pr3507-main-rebase",
         "2026-10-27-feedback-information",
         "2026-10-27-feedback-entry-hidden",
         "2026-10-27-feedback-disclosure",
         "2026-10-27-feedback-account-entry-main-rebase",
         "2026-10-26-feedback-coming-soon",
         "2026-10-26-feedback-upload-entry",
+        "2026-10-26-voice-identity-guide-sections",
         "2026-10-25-pr3496-memory-sync-merge",
         "2026-10-25-pr3496-main-merge",
         "2026-10-25-recent-memory-sync-main-merge",
@@ -487,7 +513,7 @@ RETIRED_LOCALE_VERSIONS = frozenset(
 #
 # Arrays expand by index too, so appending badminton.lines.* dialogue also fails:
 # stale caches yield undefined, equivalent to missing keys.
-LOCALE_KEY_SIGNATURE = "230ce11eacc9e9a5e400a0e18ed40ae2b69bcebec462a235cec338052376f28d"
+LOCALE_KEY_SIGNATURE = "1c61cc28cac2d9f282749c0572b12a62413d47149189f0da5f520da93b74e8b5"
 
 _BUMP_INSTRUCTIONS = (
     "static/locales 的 key 结构变了。请在 static/i18n-i18next.js 里把 LOCALE_VERSION "
